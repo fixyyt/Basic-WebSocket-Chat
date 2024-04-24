@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f4;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    #chatRooms {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 10px;
+    }
+
+    .room {
+      cursor: pointer;
+      padding: 10px;
+      margin: 0 5px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      background-color: #fff;
+    }
+
+    .room.active {
+      background-color: #3498db;
+      color: #fff;
+    }
+
+    #messages {
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      background-color: #fff;
+      overflow-y: scroll;
+      min-height: 300px;
+      max-height: 300px;
+      max-width: 800px;
+      margin: auto;
+    }
+
+    #messageInput {
+      display: block;
+      margin: 0 auto;
+      width: 80%;
+      padding: 5px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      resize: none;
+      max-width: 800px;
+      margin: auto;
+    }
+
+    #sendButton {
+      display: block;
+      margin: 10px auto;
+      padding: 8px 20px;
+      border: none;
+      border-radius: 5px;
+      background-color: #3498db;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    #sendButton:hover {
+      background-color: #2980b9;
+    }
+
+    p {
+      margin: 5px 0;
+    }
+    #filterInput {
+      display: block;
+      margin: 10px auto;
+      width: 200px;
+      padding: 5px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Chat</h1>
+  
+  <!-- Chat rooms -->
+  <section id="chatRooms">
+    <div id="general" class="room active" onclick="switchRoom('general')">General</div>
+    <div id="room1" class="room" onclick="switchRoom('room1')">Room 1</div>
+    <div id="room2" class="room" onclick="switchRoom('room2')">Room 2</div>
+  </section>
+  <input type="text" id="filterInput" placeholder="Filter messages...">
+  <section id="messages"></section>
+  <textarea id="messageInput" placeholder="Type your message here..." style="width: 100%; height: 50px; margin-bottom: 10px;"></textarea>
+  <button id="sendButton">Send Message</button>
+
+  <script>
+    const socket = new WebSocket('ws://localhost:3001');
+    const messagesSection = document.getElementById('messages');
+    const messageInput = document.getElementById('messageInput');
+    let currentRoom = 'general'; // Default room is General
+
+    // Initialize message history arrays for each room
+    const messageHistories = {
+      general: [],
+      room1: [],
+      room2: []
+    };
+
+    // Function to switch between rooms
+    function switchRoom(roomName) {
+      // Remove 'active' class from all rooms
+      document.querySelectorAll('.room').forEach(room => {
+        room.classList.remove('active');
+      });
+      // Add 'active' class to the selected room
+      document.getElementById(roomName).classList.add('active');
+      currentRoom = roomName;
+      // Clear messages when switching rooms
+      messagesSection.innerHTML = '';
+      // Display messages for the current room
+      messageHistories[currentRoom].forEach(message => {
+        handleMessage(message);
+      });
+    }
+
+    // Handle receiving messages from the server
+    socket.onmessage = function(event) {
+      // Check if the received data is a Blob
+      if (event.data instanceof Blob) {
+        // Convert Blob to readable format
+        const reader = new FileReader();
+        reader.onload = function() {
+          try {
+            const jsonData = JSON.parse(reader.result);
+            handleMessageAndHistory(jsonData);
+          } catch (error) {
+            console.error('Error parsing Blob data as JSON:', error);
+          }
+        };
+        reader.readAsText(event.data);
+        return;
+      }
+
+      // Assuming the data is JSON, try parsing it
+      try {
+        const message = JSON.parse(event.data);
+        handleMessageAndHistory(message);
+      } catch (error) {
+        console.error('Error parsing JSON message:', error);
+      }
+    };
+
+    // Function to handle received messages and add them to history
+    function handleMessageAndHistory(message) {
+      // Push message to history of the current room
+      messageHistories[message.room].push(message);
+      // Display message if it matches filter criteria and belongs to the current room
+      if (message.room === currentRoom) {
+        handleMessage(message);
+      }
+    }
+
+    // Handle errors in WebSocket connection
+    socket.onerror = function(error) {
+      console.error('WebSocket error: ', error);
+    };
+
+    // Send message when the send button is clicked
+    document.getElementById('sendButton').addEventListener('click', () => {
+      const message = messageInput.value.trim();
+      if (message !== '') {
+        socket.send(JSON.stringify({ text: message, room: currentRoom }));
+        messageInput.value = '';
+      }
+    });
+
+    // Load General room messages when the site loads
+    window.onload = function() {
+      switchRoom('general');
+    };
+
+    // Function to handle received messages and filter them
+    function handleMessage(message) {
+      const filterInput = document.getElementById('filterInput');
+      const filterValue = filterInput.value.toLowerCase();
+
+      if (message.text.toLowerCase().includes(filterValue)) {
+        const messageElement = document.createElement('p');
+        messageElement.textContent = message.text;
+        messagesSection.appendChild(messageElement);
+      }
+    }
+
+    // Add event listener for filtering messages
+    document.getElementById('filterInput').addEventListener('input', () => {
+      // Clear messages when filtering
+      messagesSection.innerHTML = '';
+      // Re-render messages based on filter criteria
+      messageHistories[currentRoom].forEach(message => {
+        handleMessage(message);
+      });
+    });
+  </script>
+</body>
+</html>
