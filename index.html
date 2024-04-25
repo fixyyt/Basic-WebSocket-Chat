@@ -46,13 +46,14 @@
       max-height: 300px;
       max-width: 800px;
       margin: auto;
+      scroll-behavior: smooth;
     }
 
     #messageInput {
       display: block;
       margin: 0 auto;
       width: 80%;
-      padding: 5px;
+      padding: 10px;
       border: 1px solid #ccc;
       border-radius: 5px;
       resize: none;
@@ -69,6 +70,7 @@
       background-color: #3498db;
       color: #fff;
       cursor: pointer;
+      font-size: 120%;
     }
 
     #sendButton:hover {
@@ -77,6 +79,19 @@
 
     p {
       margin: 5px 0;
+      position: relative;
+      transition: color 0.3s;
+      overflow-wrap: break-word;
+      padding-right: 20px;
+    }
+
+    p:hover {
+      color: #0077ff;
+    }
+    span {
+      position: absolute;
+      top: 0;
+      right: 0;
     }
     #filterInput {
       display: block;
@@ -86,9 +101,23 @@
       border: 1px solid #ccc;
       border-radius: 5px;
     }
+    #login{
+      position: absolute;
+      top: 20px;
+      right: 100px;
+      font-size: 130%;
+      cursor: pointer;
+    }
+    #login:hover{
+      color: #0077ff;
+    }
+    #messages p div{
+      float: left;
+    }
   </style>
 </head>
 <body>
+  <div id="login" onclick="redirectToLoginPage();">Login</div>
   <h1>WebSocket Chat</h1>
   
   <!-- Chat rooms -->
@@ -103,7 +132,7 @@
   <button id="sendButton">Send Message</button>
 
   <script>
-    const socket = new WebSocket('ws://localhost:3001');
+    const socket = new WebSocket('ws://localhost:3003');
     const messagesSection = document.getElementById('messages');
     const messageInput = document.getElementById('messageInput');
     let currentRoom = 'general'; // Default room is General
@@ -115,25 +144,45 @@
       room2: []
     };
 
-    // Function to switch between rooms
-    function switchRoom(roomName) {
-      // Remove 'active' class from all rooms
-      document.querySelectorAll('.room').forEach(room => {
-        room.classList.remove('active');
-      });
-      // Add 'active' class to the selected room
-      document.getElementById(roomName).classList.add('active');
-      currentRoom = roomName;
-      // Clear messages when switching rooms
-      messagesSection.innerHTML = '';
-      // Display messages for the current room
-      messageHistories[currentRoom].forEach(message => {
-        handleMessage(message);
-      });
-    }
+// Function to switch between rooms
+function switchRoom(roomName) {
+  // Remove 'active' class from all rooms
+  document.querySelectorAll('.room').forEach(room => {
+    room.classList.remove('active');
+  });
+  // Add 'active' class to the selected room
+  document.getElementById(roomName).classList.add('active');
+  currentRoom = roomName;
+  // Clear messages when switching rooms
+  messagesSection.innerHTML = '';
+  // Display messages for the current room
+  messageHistories[currentRoom].forEach(message => {
+    handleMessage(message);
+  });
+
+  // Scroll to the latest message (bottom)
+  messagesSection.scrollTop = messagesSection.scrollHeight;
+  // Check if the WebSocket connection is open before updating online status
+  if (socket.readyState === WebSocket.OPEN) {
+    updateOnlineStatus(true);
+  } else {
+    console.warn('WebSocket connection is not open yet.');
+  }
+}
+
+
+// Function to update online status
+function updateOnlineStatus(online) {
+  const username = sessionStorage.getItem('user');
+  if (username) {
+    socket.send(JSON.stringify({ online: online, username: username, room: currentRoom }));
+  }
+}
+
 
     // Handle receiving messages from the server
     socket.onmessage = function(event) {
+      console.log('Message received:', event.data);
       // Check if the received data is a Blob
       if (event.data instanceof Blob) {
         // Convert Blob to readable format
@@ -142,6 +191,7 @@
           try {
             const jsonData = JSON.parse(reader.result);
             handleMessageAndHistory(jsonData);
+            
           } catch (error) {
             console.error('Error parsing Blob data as JSON:', error);
           }
@@ -158,47 +208,129 @@
         console.error('Error parsing JSON message:', error);
       }
     };
+socket.onopen = function() {
+  // Update online status when connection is opened
+  updateOnlineStatus(true);
+};
 
-    // Function to handle received messages and add them to history
-    function handleMessageAndHistory(message) {
-      // Push message to history of the current room
-      messageHistories[message.room].push(message);
-      // Display message if it matches filter criteria and belongs to the current room
-      if (message.room === currentRoom) {
-        handleMessage(message);
+
+// Function to handle received messages and add them to history
+function handleMessageAndHistory(message) {
+  if (!messageHistories[message.room]) {
+    messageHistories[message.room] = [];
+  }
+  
+  // Store online status in sessionStorage
+  const onlineStatus = sessionStorage.getItem('onlineStatus');
+  let userOnlineStatus = {};
+  if (onlineStatus) {
+    userOnlineStatus = JSON.parse(onlineStatus);
+  }
+  userOnlineStatus[message.username] = message.online;
+  sessionStorage.setItem('onlineStatus', JSON.stringify(userOnlineStatus));
+
+  // Push message to history of the current room
+  messageHistories[message.room].push(message);
+  
+  // Display message if it matches filter criteria and belongs to the current room
+  if (message.room === currentRoom) {
+    handleMessage(message); // Call handleMessage function to display the message
+  }
+  
+  if (message.online !== undefined) {
+    // Update user's online status in the UI
+    updateUserOnlineStatus(message.username, message.online);
+  }
+}
+
+// Function to update user's online status in the UI
+function updateUserOnlineStatus(username, online) {
+  const messages = document.querySelectorAll('p');
+  messages.forEach(message => {
+    const messageUsername = message.querySelector('strong').textContent.replace(':', '').trim();
+    if (messageUsername === username) {
+      const presenceElement = message.querySelector('div');
+      if (presenceElement) {
+        presenceElement.style.color = online ? "#2ecc71" : "#95a5a6"; // Green for online, gray for offline
       }
     }
+  });
+}
+
+
+
 
     // Handle errors in WebSocket connection
     socket.onerror = function(error) {
       console.error('WebSocket error: ', error);
     };
 
-    // Send message when the send button is clicked
-    document.getElementById('sendButton').addEventListener('click', () => {
-      const message = messageInput.value.trim();
-      if (message !== '') {
-        socket.send(JSON.stringify({ text: message, room: currentRoom }));
-        messageInput.value = '';
-      }
-    });
+// Send message when the send button is clicked
+document.getElementById('sendButton').addEventListener('click', () => {
+  const message = messageInput.value.trim();
+  const username = sessionStorage.getItem('user');
+  const online = navigator.onLine; // Get online status of the user
+  if (message !== '' && username) {
+    socket.send(JSON.stringify({ text: message, room: currentRoom, username: username, online: online })); // Include online status
+    messageInput.value = '';
+  } else {
+    console.error('Username not found in sessionStorage');
+    alert("Log in to send messages.");
+  }
+});
+
 
     // Load General room messages when the site loads
     window.onload = function() {
       switchRoom('general');
+      const login = document.getElementById('login');
+      const username = sessionStorage.getItem('user');
+      if(username){
+        login.innerText = 'Log Out';
+      }else{
+        login.innerText = 'Login';
+      }
     };
 
-    // Function to handle received messages and filter them
     function handleMessage(message) {
-      const filterInput = document.getElementById('filterInput');
-      const filterValue = filterInput.value.toLowerCase();
+  const online = message.online;
+  
+  const filterInput = document.getElementById('filterInput');
+  const filterValue = filterInput.value.toLowerCase();
 
-      if (message.text.toLowerCase().includes(filterValue)) {
-        const messageElement = document.createElement('p');
-        messageElement.textContent = message.text;
-        messagesSection.appendChild(messageElement);
-      }
-    }
+  // Check if message text exists and is not null
+  if (message.text && message.text.toLowerCase().includes(filterValue)) {
+    const messageElement = document.createElement('p');
+    const usernameElement = document.createElement('strong');
+    const timestampElement = document.createElement('span');
+    const timestamp = new Date(Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Add presence indicator
+    const presenceElement = document.createElement('div');
+    presenceElement.textContent = " \u25CF"; // Black circle Unicode character
+    presenceElement.style.color = message.online ? "#2ecc71" : "#95a5a6"; // Green for online, gray for offline
+    messageElement.appendChild(presenceElement);
+
+    // Add username
+    usernameElement.textContent = message.username + ": ";
+    messageElement.appendChild(usernameElement);
+
+    // Add message text
+    const textNode = document.createTextNode(message.text);
+    messageElement.appendChild(textNode);
+
+    // Add timestamp
+    timestampElement.textContent = ' [' + timestamp + ']';
+    messageElement.appendChild(timestampElement);
+
+    // Append the message element to the messages section
+    messagesSection.appendChild(messageElement);
+
+    // Scroll to the latest message (bottom)
+    messagesSection.scrollTop = messagesSection.scrollHeight;
+    console.log(online, textNode);
+  }
+}
 
     // Add event listener for filtering messages
     document.getElementById('filterInput').addEventListener('input', () => {
@@ -209,6 +341,38 @@
         handleMessage(message);
       });
     });
+
+    function redirectToLoginPage(){
+      const login = document.getElementById('login');
+      const username = sessionStorage.getItem('user');
+      if(username){
+        sessionStorage.removeItem('user');
+        window.location.href = '/';
+      }else{
+        window.location.href = "login";
+      }
+    }
+window.addEventListener('beforeunload', function() {
+  // Update online status when closing the tab
+  updateOnlineStatus(false);
+});
+
+
+// Function to handle offline notifications
+function handleOfflineNotification(username, online, room) {
+  // Change dot color for messages from offline users to gray
+  const messages = document.querySelectorAll('p');
+  messages.forEach(message => {
+    const messageUsername = message.querySelector('strong').textContent.replace(':', '').trim();
+    if (messageUsername === username && message.dataset.room === room) {
+      const dot = message.querySelector('div');
+      if (dot) {
+        dot.style.color = online ? "#2ecc71" : "#95a5a6"; // Green for online, gray for offline
+      }
+    }
+  });
+}
+
   </script>
 </body>
 </html>
