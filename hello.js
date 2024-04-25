@@ -14,7 +14,26 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(data);
     });
-  } else {
+  }else if (req.url === '/login') {
+    fs.readFile('login.html', (err, data) => {
+      if (err) {
+        res.writeHead(500);
+        return res.end('Error loading login.html');
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(data);
+    });
+  }else if(req.url === '/users.json'){
+    fs.readFile('users.json', (err, data) => {
+      if (err) {
+        res.writeHead(500);
+        return res.end('Error loading users.json');
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(data);
+    });
+  }
+  else {
     res.writeHead(404);
     res.end('Page not found');
   }
@@ -39,15 +58,22 @@ wss.on('connection', (ws) => {
     });
   });
 
-  // Event listener for closing connections
-  ws.on('close', () => {
-    console.log('Client disconnected');
+// Event listener for closing connections
+ws.on('close', () => {
+  console.log('Client disconnected');
+  const offlineUsername = ws.username; // Get the username of the offline user
+  wss.clients.forEach((client) => {
+    if (client !== ws && client.readyState === WebSocket.OPEN) {
+      // Broadcast a message indicating that the user is offline
+      client.send(JSON.stringify({ online: false, username: offlineUsername }));
+    }
   });
 });
 
+});
+
 // Start the HTTP server and WebSocket server
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3003;
 server.listen(PORT, () => {
   console.log(`Server is listening on port ${PORT}`);
 });
-
